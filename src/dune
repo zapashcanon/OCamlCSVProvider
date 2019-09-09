@@ -1,0 +1,12 @@
+(library
+  (name csv_provider)
+  (public_name csv_provider)
+  (wrapped false)
+  (modules Csv_provider)
+  (libraries lwt cohttp-lwt cohttp-lwt-unix ppx_deriving ppx_deriving.api fmt ppx_tools.metaquot csv batteries ocaml-migrate-parsetree)
+  (preprocess (action (run ppxfind -legacy ppx_tools.metaquot --as-pp ))))
+
+(executable
+  (name ppx_csv_provider)
+  (modules ppx_csv_provider)
+  (libraries csv_provider))

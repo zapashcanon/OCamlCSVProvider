@@ -1,13 +1,13 @@
 open Ast_mapper
 open Ast_helper
 open Asttypes
+
 open Parsetree
 open Longident
 
 open Batteries
 
 open Lwt
-open Cohttp
 open Cohttp_lwt_unix
 
 let get_csv url =
@@ -15,16 +15,16 @@ let get_csv url =
     let open Batteries in
     String.starts_with url "http://" || String.starts_with url "https://" in
   if is_web then
-    Client.get (Uri.of_string url) >>= fun (resp, body) ->
-    body |> Cohttp_lwt_body.to_string >|= fun body -> body
+    Client.get (Uri.of_string url) >>= fun (_, body) ->
+    body |> Cohttp_lwt.Body.to_string >|= fun body -> body
   else
-    let fd = Lwt_main.run @@ Lwt_io.open_file Input url in
+    let fd = Lwt_main.run @@ Lwt_io.open_file ~mode:Input url in
     Lwt_io.read fd
 
 let infer s =
-  begin try (int_of_string s; "int") with
+  begin try (let _ = int_of_string s in "int") with
     | _ ->
-      begin try (float_of_string s; "float") with
+      begin try (let _ = float_of_string s in "float") with
         | _ -> "string"
       end
   end
@@ -34,12 +34,14 @@ let inferf loc s i =
   | "int" -> Exp.apply ~loc (Exp.ident ~loc { txt = Lident "int_of_string"; loc = loc }) [Nolabel, i]
   | "float" -> Exp.apply ~loc (Exp.ident ~loc { txt = Lident "float_of_string"; loc = loc }) [Nolabel, i]
   | "string" -> i
+  | _ -> assert false
 
 let inferf' loc s i =
   infer s |> function
   | "int" -> Exp.apply ~loc (Exp.ident ~loc { txt = Lident "string_of_int"; loc = loc }) [Nolabel, i]
   | "float" -> Exp.apply ~loc (Exp.ident ~loc { txt = Lident "string_of_float"; loc = loc }) [Nolabel, i]
   | "string" -> i
+  | _ -> assert false
 
 let replace_keyword s s' str =
   String.replace ~str ~sub:s ~by:s' |> snd
@@ -162,21 +164,21 @@ let struct_of_url ?(sep=',') url loc =
                                 [%stri let map f (h, xs) = (h, List.map f xs)];
                                 [%stri let filter p (h, xs) = (h, List.filter p xs)]]
 
-let csv_mapper argv =
+let csv_mapper _ =
   {default_mapper with
    module_expr = begin fun mapper mod_expr ->
      match mod_expr with
-     | { pmod_attributes; pmod_loc; pmod_desc = Pmod_extension ({txt = "csv"; loc}, pstr) } ->
+     | { pmod_desc = Pmod_extension ({txt = "csv"; loc}, pstr); _ } ->
        begin match pstr with
          | PStr [{ pstr_desc =
                      Pstr_eval ({ pexp_loc = loc;
-                                  pexp_desc = Pexp_constant (Pconst_string (sym, None))}, _)}] ->
+                                  pexp_desc = Pexp_constant (Pconst_string (sym, None)); _}, _); _}] ->
            Lwt_main.run @@ struct_of_url sym loc
          | PStr [{ pstr_desc =
                      Pstr_eval ({ pexp_loc = loc;
                                   pexp_desc = Pexp_tuple
                                       [{ pexp_desc = Pexp_constant (Pconst_string (sym, None)); _ };
-                                       { pexp_desc = Pexp_constant (Pconst_char sep); _ }]}, _)}] ->
+                                       { pexp_desc = Pexp_constant (Pconst_char sep); _ }]; _}, _); _}] ->
            Lwt_main.run @@ struct_of_url ~sep sym loc
          | _ ->
            raise (Location.Error
